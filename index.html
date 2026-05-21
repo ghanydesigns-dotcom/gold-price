@@ -28,9 +28,6 @@
     .err { color: var(--color-text-danger); font-size:13px; margin-top:8px; background: #fef2f2; padding: 8px; border-radius: 6px; }
     .source { font-size:11px; color:var(--color-text-tertiary); margin-top:1rem; text-align:right; }
     input, select, button, textarea { width: 100%; padding: 8px 12px; border: 1px solid var(--color-border-tertiary); border-radius: var(--border-radius-md); font-size: 14px; box-sizing: border-box; }
-    button { background: #2563eb; color: white; border: none; font-weight: 500; cursor: pointer; margin-top: 10px; display: flex; align-items: center; justify-content: center; gap: 8px; }
-    button:hover { background: #1d4ed8; }
-    textarea { font-family: monospace; font-size: 11px; resize: vertical; margin-top: 6px; }
   </style>
 </head>
 <body>
@@ -41,10 +38,10 @@
   <div style="display:flex; align-items:center; gap:10px; margin-bottom:1rem;">
     <i class="ti ti-coins" style="font-size:20px; color:var(--color-text-secondary);" aria-hidden="true"></i>
     <span style="font-size:15px; font-weight:600;">Gold price calculator</span>
-    <span style="margin-left:auto; font-size:11px; padding:2px 8px; border-radius:var(--border-radius-md); background:var(--color-background-success); color:var(--color-text-success);">Manual Input Mode</span>
+    <span style="margin-left:auto; font-size:11px; padding:2px 8px; border-radius:var(--border-radius-md); background:var(--color-background-success); color:var(--color-text-success);" id="mode-badge">Live Auto Mode</span>
   </div>
 
-  <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:1rem;">
+  <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
     <div>
       <div class="label">Weight (grams)</div>
       <input type="number" id="grams" value="45.33" min="0.01" step="0.01" oninput="recalc()" />
@@ -59,11 +56,6 @@
         <option value="0.585">14K</option>
       </select>
     </div>
-  </div>
-
-  <div style="border-top: 1px dashed #cbd5e1; padding-top:10px;">
-    <div class="label">Paste Swissquote JSON Array:</div>
-    <textarea id="json-input" rows="4" placeholder='[{"topo":{"platform":...}}]' oninput="parseManualJSON()"></textarea>
   </div>
   
   <div id="error" class="err" style="display:none;"></div>
@@ -91,51 +83,38 @@ const TROY = 31.1035;
 let pricePerOzUsd = null;
 let egpRate = null;
 
-// Silently cache the background FX rate on launch so it's ready when you paste
-async function initFX() {
+// Initialize Currency and Gold Feed
+async function initApp() {
   try {
+    // 1. Fetch Currency Exchange Rate
     const fxRes = await fetch('https://open.er-api.com/v6/latest/USD');
     const fxData = await fxRes.json();
     egpRate = fxData.rates.EGP;
-  } catch(err) {
-    console.error("FX initialization failed, using static fallback", err);
-    egpRate = 53.00; // Safe approximate fallback if open-api goes down
-  }
-}
 
-async function parseManualJSON() {
-  const jsonText = document.getElementById('json-input').value.trim();
-  const errEl = document.getElementById('error');
-  errEl.style.display = 'none';
-  
-  if (!jsonText) {
-    document.getElementById('results').style.display = 'none';
-    return;
-  }
-  
-  try {
-    const goldData = JSON.parse(jsonText);
+    // 2. Fetch Swissquote JSON dynamically (saved by GitHub automation)
+    const goldRes = await fetch('./swissquote_gold.json');
+    if (!goldRes.ok) throw new Error("Could not load automatically saved gold metrics.");
+    const goldData = await goldRes.json();
+    
     const bid = goldData[0]?.spreadProfilePrices?.[0]?.bid;
     const ask = goldData[0]?.spreadProfilePrices?.[0]?.ask;
-    
-    if (!bid || !ask) throw new Error("Could not parse bid/ask from your data.");
+    if (!bid || !ask) throw new Error("Invalid structure in automation data file.");
     
     pricePerOzUsd = (bid + ask) / 2;
     
-    if(!egpRate) {
-      await initFX();
-    }
-    
-    document.getElementById('timestamp').textContent = 'Calculated at ' + new Date().toLocaleTimeString();
+    document.getElementById('timestamp').textContent = 'Live Price Data Synced';
     document.getElementById('results').style.display = 'block';
     recalc();
-  } catch(e) {
-    errEl.textContent = 'Invalid data template: ' + e.message;
+
+  } catch(err) {
+    console.error(err);
+    const errEl = document.getElementById('error');
+    errEl.textContent = 'Data error: ' + err.message;
     errEl.style.display = 'block';
-    document.getElementById('results').style.display = 'none';
   }
 }
 
+// Recalculate calculations
 function recalc() {
   if (!pricePerOzUsd || !egpRate) return;
   const grams = parseFloat(document.getElementById('grams').value) || 0;
@@ -149,8 +128,8 @@ function recalc() {
   document.getElementById('egp-gram').textContent = 'E£' + Math.round(perGramEgp).toLocaleString('en-US') + ' / gram';
 }
 
-// Warm up the configuration
-initFX();
+// App bootstrapping
+initApp();
 </script>
 </body>
 </html>
