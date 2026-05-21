@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gold Price Calculator</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
+  <style>
+    :root {
+      --color-background-primary: #ffffff;
+      --color-border-tertiary: #e2e8f0;
+      --color-text-primary: #1e293b;
+      --color-text-secondary: #64748b;
+      --color-text-tertiary: #94a3b8;
+      --color-background-success: #dcfce7;
+      --color-text-success: #15803d;
+      --color-text-danger: #b91c1c;
+      --border-radius-lg: 12px;
+      --border-radius-md: 6px;
+    }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f8fafc; padding: 2rem; max-width: 500px; margin: 0 auto; }
+    .card { background: var(--color-background-primary); border: 0.5px solid var(--color-border-tertiary); border-radius: var(--border-radius-lg); padding: 1.25rem; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+    .label { font-size: 13px; color: var(--color-text-secondary); margin-bottom: 4px; font-weight: 500; }
+    .big { font-size: 28px; font-weight: 600; color: var(--color-text-primary); }
+    .sub { font-size: 13px; color: var(--color-text-secondary); margin-top: 2px; }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 1rem; }
+    .badge { display:inline-block; font-size:11px; padding:2px 10px; border-radius:var(--border-radius-md); background:var(--color-background-success); color:var(--color-text-success); margin-bottom:10px; }
+    .err { color: var(--color-text-danger); font-size:13px; margin-top:8px; background: #fef2f2; padding: 8px; border-radius: 6px; }
+    .source { font-size:11px; color:var(--color-text-tertiary); margin-top:1rem; text-align:right; }
+    input, select, button, textarea { width: 100%; padding: 8px 12px; border: 1px solid var(--color-border-tertiary); border-radius: var(--border-radius-md); font-size: 14px; box-sizing: border-box; }
+    button { background: #2563eb; color: white; border: none; font-weight: 500; cursor: pointer; margin-top: 10px; display: flex; align-items: center; justify-content: center; gap: 8px; }
+    button:hover { background: #1d4ed8; }
+    textarea { font-family: monospace; font-size: 11px; resize: vertical; margin-top: 6px; }
+  </style>
+</head>
+<body>
+
+<h2 class="sr-only">Gold price calculator</h2>
+
+<div class="card">
+  <div style="display:flex; align-items:center; gap:10px; margin-bottom:1rem;">
+    <i class="ti ti-coins" style="font-size:20px; color:var(--color-text-secondary);" aria-hidden="true"></i>
+    <span style="font-size:15px; font-weight:600;">Gold price calculator</span>
+    <span style="margin-left:auto; font-size:11px; padding:2px 8px; border-radius:var(--border-radius-md); background:var(--color-background-success); color:var(--color-text-success);">Manual Input Mode</span>
+  </div>
+
+  <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:1rem;">
+    <div>
+      <div class="label">Weight (grams)</div>
+      <input type="number" id="grams" value="45.33" min="0.01" step="0.01" oninput="recalc()" />
+    </div>
+    <div>
+      <div class="label">Karat</div>
+      <select id="karat" onchange="recalc()">
+        <option value="1" selected>24K (pure)</option>
+        <option value="0.9167">22K</option>
+        <option value="0.875">21K</option>
+        <option value="0.75">18K</option>
+        <option value="0.585">14K</option>
+      </select>
+    </div>
+  </div>
+
+  <div style="border-top: 1px dashed #cbd5e1; padding-top:10px;">
+    <div class="label">Paste Swissquote JSON Array:</div>
+    <textarea id="json-input" rows="4" placeholder='[{"topo":{"platform":...}}]' oninput="parseManualJSON()"></textarea>
+  </div>
+  
+  <div id="error" class="err" style="display:none;"></div>
+</div>
+
+<div id="results" style="display:none; margin-top:1rem;">
+  <div class="badge" id="timestamp"></div>
+  <div class="grid2">
+    <div class="card">
+      <div class="label">USD Total</div>
+      <div class="big" id="usd-total">—</div>
+      <div class="sub" id="usd-gram"></div>
+    </div>
+    <div class="card">
+      <div class="label">EGP Total</div>
+      <div class="big" id="egp-total">—</div>
+      <div class="sub" id="egp-gram"></div>
+    </div>
+  </div>
+  <div class="source">Mohamed Abdelghany 2026</div>
+</div>
+
+<script>
+const TROY = 31.1035;
+let pricePerOzUsd = null;
+let egpRate = null;
+
+// Silently cache the background FX rate on launch so it's ready when you paste
+async function initFX() {
+  try {
+    const fxRes = await fetch('https://open.er-api.com/v6/latest/USD');
+    const fxData = await fxRes.json();
+    egpRate = fxData.rates.EGP;
+  } catch(err) {
+    console.error("FX initialization failed, using static fallback", err);
+    egpRate = 53.00; // Safe approximate fallback if open-api goes down
+  }
+}
+
+async function parseManualJSON() {
+  const jsonText = document.getElementById('json-input').value.trim();
+  const errEl = document.getElementById('error');
+  errEl.style.display = 'none';
+  
+  if (!jsonText) {
+    document.getElementById('results').style.display = 'none';
+    return;
+  }
+  
+  try {
+    const goldData = JSON.parse(jsonText);
+    const bid = goldData[0]?.spreadProfilePrices?.[0]?.bid;
+    const ask = goldData[0]?.spreadProfilePrices?.[0]?.ask;
+    
+    if (!bid || !ask) throw new Error("Could not parse bid/ask from your data.");
+    
+    pricePerOzUsd = (bid + ask) / 2;
+    
+    if(!egpRate) {
+      await initFX();
+    }
+    
+    document.getElementById('timestamp').textContent = 'Calculated at ' + new Date().toLocaleTimeString();
+    document.getElementById('results').style.display = 'block';
+    recalc();
+  } catch(e) {
+    errEl.textContent = 'Invalid data template: ' + e.message;
+    errEl.style.display = 'block';
+    document.getElementById('results').style.display = 'none';
+  }
+}
+
+function recalc() {
+  if (!pricePerOzUsd || !egpRate) return;
+  const grams = parseFloat(document.getElementById('grams').value) || 0;
+  const purity = parseFloat(document.getElementById('karat').value);
+  const perGramUsd = (pricePerOzUsd / TROY) * purity;
+  const perGramEgp = perGramUsd * egpRate;
+
+  document.getElementById('usd-total').textContent = '$' + (perGramUsd * grams).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+  document.getElementById('usd-gram').textContent = '$' + perGramUsd.toFixed(2) + ' / gram';
+  document.getElementById('egp-total').textContent = 'E£' + Math.round(perGramEgp * grams).toLocaleString('en-US');
+  document.getElementById('egp-gram').textContent = 'E£' + Math.round(perGramEgp).toLocaleString('en-US') + ' / gram';
+}
+
+// Warm up the configuration
+initFX();
+</script>
+</body>
+</html>
