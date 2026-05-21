@@ -1,0 +1,34 @@
+name: Scheduled Gold Data Sync
+
+on:
+  schedule:
+    - cron: '0 * * * *' # Executes completely automated once every hour
+  workflow_dispatch: # Allows you to manually trigger it via the UI button anytime
+
+permissions:
+  contents: write
+
+jobs:
+  sync-feed:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code Repository
+        uses: actions/checkout@v4
+
+      - name: Fetch Latest Metrics from Swissquote API
+        run: |
+          curl -s -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64)" \
+          "https://forex-data-feed.swissquote.com/public-quotes/bboquotes/instrument/XAU/USD" \
+          -o swissquote_gold.json
+
+      - name: Commit and Push Updated Manifest
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add swissquote_gold.json
+          if ! git diff --cached --quiet; then
+            git commit -m "Automated Sync: Updated Swissquote assets data payload"
+            git push
+          else
+            echo "No changes found in gold asset evaluations since last run."
+          fi
