@@ -2,11 +2,15 @@ name: Scheduled Gold Data Sync
 
 on:
   schedule:
-    - cron: '0 * * * *' # Executes completely automated once every hour
-  workflow_dispatch: # Allows you to manually trigger it via the UI button anytime
+    - cron: '0 * * * *' # Automated execution once every hour
+  workflow_dispatch: # Allows manual trigger button
 
 permissions:
   contents: write
+
+# This clears the deprecation warning by opting into the newer runtime environment
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   sync-feed:
